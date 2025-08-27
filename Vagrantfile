@@ -18,31 +18,34 @@ Vagrant.configure("2") do |config|
   end
 
   # ---------- haproxy (Consul server + HAProxy) ----------
-  config.vm.define "haproxy" do |node|
-    node.vm.hostname = "haproxy"
-    node.vm.network "private_network", ip: "#{NET}.2"
+config.vm.define "haproxy" do |node|
+  node.vm.hostname = "haproxy"
+  node.vm.network "private_network", ip: "#{NET}.2"
 
-    node.vm.provider "virtualbox" do |vb|
-      vb.name   = "haproxy"
-      vb.memory = 1024
-      vb.cpus   = 1
-    end
+  # Carpeta sincronizada para reportes y planes de Artillery
+  node.vm.synced_folder "./tests", "/home/vagrant/tests", create: true
 
-    node.vm.provision "shell", path: "scripts/common.sh"
-    node.vm.provision "shell",
-      path: "scripts/haproxy.sh",
-      env: {
-        "CONSUL_SERVER_IP" => CONSUL_SERVER_IP,
-        "SERVICE_NAME"     => SERVICE_NAME,
-        "PORTS"            => PORTS
-      }
+  node.vm.provision "shell", path: "scripts/common.sh"
+
+  # ¡Debe existir y ser ejecutable!
+  node.vm.provision "shell", path: "scripts/artillery_setup.sh"
+
+  node.vm.provision "shell",
+    path: "scripts/haproxy.sh",
+    env: {
+      "CONSUL_SERVER_IP" => CONSUL_SERVER_IP,
+      "SERVICE_NAME"     => SERVICE_NAME,
+      "PORTS"            => PORTS,
+      "DISCOVERY_MODE"   => "consul"
+    }
+
   end
 
-  # ---------- web1 (Node + Consul client) ----------
-  ["web1","web2"].each_with_index do |name, idx|
+# ---------- web nodes (Node + Consul client) ----------
+  ["web1", "web2"].each_with_index do |name, idx|
     config.vm.define name do |node|
       node.vm.hostname = name
-      node.vm.network "private_network", ip: "#{NET}.#{3+idx}"
+      node.vm.network "private_network", ip: "#{NET}.#{3 + idx}"
 
       node.vm.provider "virtualbox" do |vb|
         vb.name   = name
@@ -57,10 +60,13 @@ Vagrant.configure("2") do |config|
           "CONSUL_SERVER_IP" => CONSUL_SERVER_IP,
           "SERVICE_NAME"     => SERVICE_NAME,
           "REPLICAS"         => REPLICAS.to_s,
-          "PORTS"            => PORTS
+          "PORTS"            => PORTS,
+          # Opcional: si tu app expone /health en otra ruta
+          # "HEALTH_PATH"    => "/health"
         }
     end
   end
 end
+
 
 

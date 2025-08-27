@@ -1,279 +1,300 @@
-# 📘 Microproyecto 1 — Computación en la Nube (HAProxy + Pruebas con Artillery)
+# Microproyecto1 — Consul (opcional) + HAProxy + Web (Node) + Pruebas con Artillery
 
-## 🧭 Objetivo
-Desplegar un entorno sencillo de **balanceo de carga** con **HAProxy** frente a varios servidores web y **validar su funcionamiento y rendimiento** mediante pruebas de carga con **Artillery**.  
-El resultado es un **informe reproducible** con pasos, comandos, salidas esperadas y un **reporte HTML** para evidencias.
+Proyecto académico de **Computación en la Nube** que levanta:
 
----
+- 2 VMs **web** (Node HTTP nativo) con `/: Hello` y `/health: OK`
+- 1 VM **haproxy** como balanceador (y **stats** dedicadas)
+- **Pruebas de carga** con **Artillery** (se instalan manualmente en `haproxy`)
 
-## 🏗️ Arquitectura (vista lógica)
-```
-[ Clientes / Artillery ]  -->  [ HAProxy (frontend:80) ]  -->  [ web1, web2, web3, web4 ]
-                                      |                                 (HTTP 200)
-                                      +--> /haproxy?stats  (página de estadísticas)
-```
-- **HAProxy** reparte solicitudes HTTP entrantes a los **backends** (web1..web4).
-- **Artillery** simula usuarios/requests, mide latencias/errores y genera reportes.
+> ⚠️ Solo para fines académicos.
 
 ---
 
-## 🗂️ Estructura del proyecto (sugerida)
+## Topología (IPs por defecto)
+
+| VM       | IP             | Rol                                    |
+|----------|----------------|----------------------------------------|
+| haproxy  | `192.168.100.2`| Balanceador + página de **stats**      |
+| web1     | `192.168.100.3`| App Node en puertos **3000** y **3001**|
+| web2     | `192.168.100.4`| App Node en puertos **3000** y **3001**|
+
+**Endpoints útiles**
+
+- App vía HAProxy: `http://192.168.100.2/`  
+- Stats dedicadas: `http://192.168.100.2:8404/` (user/pass: **admin/admin**)  
+- Salud directa:  
+  - `http://192.168.100.3:3000/health`, `:3001/health`  
+  - `http://192.168.100.4:3000/health`, `:3001/health`
+
+---
+
+## Estructura del proyecto
+
 ```
 microproyecto1/
-├─ Vagrantfile                # Define VMs, recursos y redes (incluye VM 'haproxy')
-├─ scripts/                   # (Opcional) scripts de aprovisionamiento
-│  ├─ install_haproxy.sh      # instala y configura HAProxy
-│  └─ install_node_artillery.sh# instala Node/npm/Artillery cuando se requiera
-├─ tests/                     # pruebas de carga y reportes
-│  ├─ test.yml                # plan de prueba Artillery (30s @ 10 req/s)
-│  ├─ report.json             # salida JSON (se genera tras la prueba)
-│  └─ report.html             # reporte HTML (se genera tras la prueba)
-└─ evidencias/                # capturas (HAProxy stats, reporte HTML, etc.)
-   ├─ haproxy-stats.png
-   └─ artillery-report.png
+│
+├── Vagrantfile
+├── README.md
+│
+├── consul/
+│   └── services/        # placeholder (vacío por ahora)
+│
+├── scripts/
+│   ├── common.sh        # paquetes base, red, timezone, utilidades
+│   ├── haproxy.sh       # instalación/config de HAProxy (+ Consul si se usa)
+│   └── web.sh           # app Node, systemd web@PUERTO, (registro Consul)
+│
+└── tests/               # (no usado aquí; las pruebas viven en ~/tests de haproxy)
 ```
 
-> **Nota:** si ya tienes tu estructura real, adapta los nombres. Esta guía funciona igual con rutas equivalentes.
-
 ---
 
-## 🧾 ¿Qué hace el `Vagrantfile`?
-- **Define** las máquinas virtuales (por ejemplo, `haproxy` y, si aplica, otras VMs).
-- **Configura** recursos: **RAM, CPU, hostname** y **redes** (IP estática para acceso desde el host).
-- **Sincroniza** carpetas del host a la VM (por ejemplo, para guardar evidencias).
-- (Opcional) **Aprovisiona**: ejecuta **scripts** post-boot para instalar HAProxy, Node o dejar configurados servicios.
+## Levantar el entorno
 
-> En este microproyecto, trabajamos directamente **dentro de la VM `haproxy`** para correr Artillery y acceder a `haproxy?stats` y al **reporte HTML** servido en el puerto 8080.
+```bash
+vagrant up
+```
 
----
+### Comprobaciones rápidas
 
-## 🧪 ¿Qué hace cada script? (sugerencia)
-Si usas scripts en `scripts/`:
-
-- **`install_haproxy.sh`**  
-  Instala HAProxy, coloca un `haproxy.cfg` con frontend en `:80` y define backends (`web1..web4`).  
-  Habilita la página de **stats** (`/haproxy?stats`). Reinicia/enable el servicio.
-
-- **`install_node_artillery.sh`**  
-  Instala **Node.js** (recomendado **v20 LTS** con `nvm` o NodeSource), **npm**, y **Artillery** (`npm i -g artillery@2.0.21`).  
-  Verifica versiones y deja preparado el entorno para pruebas.
-
-> Si no tienes estos scripts, puedes seguir los **comandos directos** de este README y lograr lo mismo.
-
----
-
-## ⚙️ Preparación del entorno (dentro de la VM)
-
-1) **Entrar a la VM `haproxy`:**
+1) **HAProxy activo** (en `haproxy`)
 ```bash
 vagrant ssh haproxy
+sudo systemctl status haproxy --no-pager
 ```
-Prompt esperado:
-```
-vagrant@haproxy:~$
-```
+**Esperado:** aparece `Active: active (running)`.
 
-2) **Verificar dependencias:**
+2) **Frontend responde**
 ```bash
-node -v
-npm -v
-artillery -V
+curl -sI http://127.0.0.1:80 | head -n1
 ```
-**Salida esperada (ejemplo estable):**
-```
-v20.11.1
-10.8.2
-2.0.21
-```
+**Esperado:** `HTTP/1.1 200 OK`.
 
-> Si ves **Node v18** y falla Artillery con `File is not defined`, instala Node 20 con **nvm**:
+3) **Backends vivos (desde `haproxy`)**
 ```bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-source "$HOME/.nvm/nvm.sh"
-nvm install 20
-nvm use 20
-nvm alias default 20
-node -v  # ahora v20.x.x
-npm -v
-npm i -g artillery@2.0.21
-artillery -V
+for h in 3 4; do for p in 3000 3001; do   echo -n "web$((h-2)):$p -> "; curl -sS -m 2 http://192.168.100.$h:$p/health; done; done
 ```
+**Esperado:** cuatro líneas con `OK`.
+
+4) **Servicios en cada web**
+```bash
+vagrant ssh web1 -c "sudo systemctl status 'web@3000' --no-pager | sed -n '1,5p';                       sudo systemctl status 'web@3001' --no-pager | sed -n '1,5p'"
+```
+**Esperado:** ambos `Active: active (running)`.
 
 ---
 
-## 🚀 Prueba de carga con Artillery (paso a paso)
+## Configuración de HAProxy usada (estática mínima)
 
-1) **Crear carpeta de pruebas:**
+> Si necesitas cargarla manualmente en `haproxy`:
+
 ```bash
-mkdir -p ~/tests
-cd ~/tests
+sudo tee /etc/haproxy/haproxy.cfg >/dev/null <<'EOF'
+global
+    log /dev/log local0
+    maxconn 4096
+    daemon
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5s
+    timeout client  30s
+    timeout server  30s
+    timeout check   5s
+
+frontend fe_http
+    bind *:80
+    default_backend be_web
+
+backend be_web
+    balance roundrobin
+    # Health check HTTP explícito:
+    http-check connect
+    http-check send meth GET uri /health ver HTTP/1.1 hdr Host localhost
+    http-check expect status 200
+
+    server w1 192.168.100.3:3000 check inter 2s fall 2 rise 1
+    server w2 192.168.100.3:3001 check inter 2s fall 2 rise 1
+    server w3 192.168.100.4:3000 check inter 2s fall 2 rise 1
+    server w4 192.168.100.4:3001 check inter 2s fall 2 rise 1
+
+# Stats dedicadas en :8404
+listen stats
+    bind *:8404
+    stats enable
+    stats uri /
+    stats refresh 2s
+    stats auth admin:admin
+EOF
+
+# Validar y reiniciar
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+sudo systemctl restart haproxy
 ```
 
-2) **Crear el plan de prueba** `test.yml` (30s a ~10 req/s):
-```yaml
+**Esperado:**
+- `haproxy -c ...` → `Configuration file is valid`.
+- `sudo ss -ltnp | grep -E ':80|:8404'` → dos líneas `LISTEN` con `haproxy`.
+
+---
+
+## Abrir la página de la app y la página de stats
+
+- **App:** `http://192.168.100.2/`  
+  **Esperado:** una de estas líneas (varía):  
+  - `Hola desde web1 en el puerto 3000`  
+  - `Hola desde web1 en el puerto 3001`  
+  - `Hola desde web2 en el puerto 3000`  
+  - `Hola desde web2 en el puerto 3001`  
+  (al refrescar, deben alternar — round robin).
+
+- **Stats:** `http://192.168.100.2:8404/`  
+  **Esperado:** pide credenciales; con **admin/admin** muestra la tabla:  
+  - `fe_http` en **OPEN**  
+  - `be_web` con **w1..w4** en **UP (green)** tras 1–3 s.
+
+**Verificación por cURL (opcional):**
+```bash
+# sin auth
+curl -i http://127.0.0.1:8404/ | head -n1
+# con auth
+curl -su admin:admin -i http://127.0.0.1:8404/ | head -n1
+```
+**Esperado:**  
+- sin auth → `HTTP/1.1 401 Unauthorized`  
+- con auth → `HTTP/1.1 200 OK`
+
+---
+
+## Dependencias a instalar en **haproxy** (para Artillery)
+
+> Todo esto **dentro** de `haproxy`:
+
+```bash
+# 1) Paquetes base
+sudo apt-get update -y
+sudo apt-get install -y ca-certificates curl gnupg python3 jq
+
+# 2) Node 20 LTS
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node -v && npm -v
+```
+**Esperado:** `node v20.x.x` y `npm 10.x`.
+
+```bash
+# 3) Artillery global
+sudo npm -g install artillery@2.0.21
+artillery -V
+```
+**Esperado:** `2.0.21`.
+
+```bash
+# 4) Carpeta de pruebas
+mkdir -p ~/tests
+```
+**Esperado:** `~/tests` creada (silencioso).
+
+---
+
+## Prueba con **Artillery** (qué hace y resultados esperados)
+
+### Qué prueba
+Genera **20 req/s por 60 s** contra `http://127.0.0.1:80/` (HAProxy) con un `GET /`.  
+Valida balanceo, ausencia de fallos y latencias.
+
+### Ejecutar
+
+```bash
+cd ~/tests
+cat > plan-20rps-60s.yml <<'YAML'
 config:
-  target: "http://192.168.100.2"
+  target: "http://127.0.0.1:80"
   phases:
-    - duration: 30
-      arrivalRate: 10   # 10 req/s durante 30s
+    - duration: 60
+      arrivalRate: 20
 scenarios:
-  - name: "GET raíz"
-    flow:
+  - flow:
       - get:
           url: "/"
+YAML
+
+artillery run plan-20rps-60s.yml -o report-20x60.json
+artillery report report-20x60.json -o report-20x60.html
 ```
 
-3) **Validar el archivo:**
-```bash
-artillery validate test.yml
+**Esperado (consola al final, aproximado):**
 ```
-**Salida esperada:**
-```
-File test.yml is valid.
-```
-
-4) **Ejecutar la prueba y generar reporte JSON:**
-```bash
-artillery run test.yml -o report.json
-```
-**Salida esperada (resumen realista):**
-```
-Phase started: unnamed (index: 0, duration: 30s) ...
-
-... (métricas por tramo) ...
-
-All VUs finished. Total time: 31 seconds
-
-Summary report @ ...
-http.codes.200: ............................................................... 300
-http.requests: ................................................................ 300
-http.responses: ............................................................... 300
-vusers.created: ................................................................ 300
-vusers.completed: .............................................................. 300
-vusers.failed: ................................................................. 0
-http.response_time:
-  min: ......................................................................... 0
-  max: ......................................................................... 25
-  mean: ........................................................................ 2.9
-  median: ...................................................................... 3
-  p95: ......................................................................... 6
-  p99: ......................................................................... 12.1
-
-Log file: /home/vagrant/tests/report.json
+Scenarios launched: 1200
+Scenarios completed: 1200
+Requests completed: 1200
+Codes: 200 1200
+Latency (ms): p50 ~3-20  p95 <100-200  p99 <200-300
+Errors: 0
 ```
 
-5) **Generar el reporte HTML:**
-```bash
-artillery report report.json -o report.html
-```
-**Salida esperada:**
-```
-Report generated: /home/vagrant/tests/report.html
-```
+### Visualizar el reporte
 
-6) **Servir el reporte HTML en 8080:**
 ```bash
 python3 -m http.server 8080 --directory ~/tests
 ```
-En otra terminal (o desde el host):
+Abre: `http://192.168.100.2:8080/report-20x60.html`  
+**Esperado:** dashboard con **0 Failures**, predominio de **200**, percentiles bajos.
+
+### Extraer números por `jq` (robusto)
+
 ```bash
-curl -I http://192.168.100.2:8080/report.html
+cd ~/tests
+# 200s
+jq '.aggregate.counters["http.codes.200"] // 0' report-20x60.json
+# Latencias
+jq '.aggregate.summaries["http.response_time"].p50' report-20x60.json
+jq '.aggregate.summaries["http.response_time"].p95' report-20x60.json
+jq '.aggregate.summaries["http.response_time"].p99' report-20x60.json
+# RPS estimado (si no viene en .aggregate.rates)
+jq '( [ .aggregate.counters|to_entries[]|select(.key|startswith("http.codes."))|.value ] | add // 0 ) / 60' report-20x60.json
 ```
-**Salida esperada:**
-```
-HTTP/1.0 200 OK
-Content-Type: text/html
-```
+**Esperado (ejemplo):**
+- `http.codes.200` ≈ `1200`
+- `p50` ≈ `3–20`
+- `p95` `< 100–200`
+- `p99` `< 200–300`
+- RPS ≈ `~20`
 
 ---
 
-## 🔎 ¿Cómo interpretar la salida de Artillery?
+## Problemas comunes y solución
 
-- **`http.codes.200`**: número de respuestas HTTP **200 OK**.  
-  - Esperado: igual al total de `http.responses` (si todo responde bien).
+- **Stats no abre** → usar listener `:8404`, reiniciar y validar:
+  ```bash
+  sudo haproxy -c -f /etc/haproxy/haproxy.cfg   # Esperado: Configuration file is valid
+  sudo systemctl restart haproxy
+  sudo ss -ltnp | grep -E ':80|:8404'           # Esperado: LISTEN en ambos
+  ```
 
-- **`vusers.created` / `vusers.completed` / `vusers.failed`**: usuarios virtuales lanzados, terminados y fallidos.  
-  - Esperado: `created == completed` y `failed = 0`.
+- **Backends DOWN (L7TOUT)** → chequear `/health` desde `haproxy`:
+  ```bash
+  for h in 3 4; do for p in 3000 3001; do curl -sS http://192.168.100.$h:$p/health; done; done
+  ```
+  **Esperado:** cuatro `OK`.  
+  Si `node` falta en web:
+  ```bash
+  # en la web afectada
+  which node || which nodejs
+  # si solo hay nodejs:
+  sudo ln -sf "$(command -v nodejs)" /usr/bin/node
+  sudo systemctl restart 'web@3000' 'web@3001'
+  ```
 
-- **`http.request_rate`**: requests por segundo enviados (RPS).  
-  - Debe acercarse a `arrivalRate` configurado (aquí ~10 req/s).
+- **Error `??` al usar npx/artillery** → Node antiguo.  
+  **Esperado tras fix:** `node v20.x.x`, `artillery -V 2.0.21`.
 
-- **`http.response_time` (min/mean/median/p95/p99/max)**: latencias en **ms**.  
-  - **`p95`** y **`p99`** muestran colas largas/peores casos.  
-  - Valores de ejemplo excelentes en tu entorno: `p95 ≈ 6 ms`, `p99 ≈ 12 ms`.
-
-- **`http.downloaded_bytes`**: bytes recibidos. Útil para dimensionar tráfico.
-
-> **Regla rápida:**  
-> - Si **p95** sube mucho al aumentar la carga (o aparecen **5xx/4xx**, o `vusers.failed > 0`), hay **saturación**/problemas de backends o red.
-
----
-
-## 🧪 Validaciones “rápidas” (sanity checks)
-
-### 1) Ver que la web responde 200
-```bash
-curl -I http://192.168.100.2/
-```
-**Salida esperada:**
-```
-HTTP/1.1 200 OK
-```
-
-### 2) Ver la página de estadísticas de HAProxy
-Abrir en navegador:  
-```
-http://192.168.100.2/haproxy?stats
-```
-**Esperado:** todos los backends **UP** (verde) y contador de requests en aumento.
-
-### 3) Ver que el reporte HTML esté disponible
-```bash
-curl -I http://192.168.100.2:8080/report.html
-```
-**Esperado:**
-```
-HTTP/1.0 200 OK
-Content-Type: text/html
-```
-
----
-
-## 🧯 Troubleshooting (errores comunes)
-
-- **`ReferenceError: File is not defined` al usar Artillery**  
-  → Estás en **Node v18**. Solución: usar **Node v20** con `nvm` (ver sección de preparación).
-
-- **`Codes 404/403/5xx` en Artillery**  
-  → La URL o backends no sirven `/`. Valida con `curl -I` y corrige `url` en `test.yml`.
-
-- **No carga `report.html` en el navegador**  
-  → Asegura que el server Python esté activo en `haproxy` y que accedes a `http://192.168.100.2:8080/report.html`.  
-  → Si usas Vagrant con port-forwarding, confirma los puertos con `vagrant port haproxy`.
-
-- **HAProxy muestra algún backend DOWN**  
-  → Revisa servicio web en ese backend (Apache/Nginx), firewall y salud (`/` responde 200).
-
----
-
-## 📸 Evidencias sugeridas
-- Captura de `haproxy?stats` con backends **UP**.  
-- Captura del **resumen** de Artillery (con 300 requests, 0 fails, p95).  
-- Captura del **report.html** abierto en el navegador.
-
-> Guarda las imágenes en `evidencias/` y enlázalas en este README:
-```markdown
-![HAProxy Stats](./evidencias/haproxy-stats.png)
-![Reporte Artillery](./evidencias/artillery-report.png)
-```
-
----
-
-## ✅ Conclusiones esperadas (ejemplo)
-- Se enviaron **300 requests** en 30 segundos (~10 req/s).  
-- **0 errores** y **100% 200 OK**.  
-- Latencia **media ≈ 3 ms**, **p95 ≈ 6 ms**, **p99 ≈ 12 ms**.  
-- El balanceador **HAProxy** distribuyó correctamente la carga y el sistema respondió de forma **estable**.
-
----
+- **`artillery: command not found`**  
+  Reinstala global y refresca:
+  ```bash
+  sudo npm -g install artillery@2.0.21
+  hash -r; which artillery; artillery -V
+  ```
