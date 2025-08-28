@@ -1,0 +1,18 @@
+# Spike test: sube tráfico muy rápido y luego baja
+config:
+  target: "http://localhost:REPLACE_HOSTPORT"
+  phases:
+    - duration: 10
+      arrivalRate: 5        # warm-up corto
+    - duration: 20
+      arrivalRate: 100      # pico fuerte
+    - duration: 10
+      arrivalRate: 5        # vuelta a normal
+  variables: {}
+scenarios:
+  - name: "Spike /"
+    flow:
+      - get:
+          url: "/"
+          expect:
+            - statusCode: 200

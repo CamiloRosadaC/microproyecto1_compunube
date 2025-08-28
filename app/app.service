@@ -1,0 +1,11 @@
+[Unit]
+Description=Node Web App
+After=network.target
+[Service]
+Environment=APP_NAME=%i
+ExecStart=/usr/bin/node /opt/app/app.js
+Restart=always
+User=www-data
+Group=www-data
+[Install]
+WantedBy=multi-user.target

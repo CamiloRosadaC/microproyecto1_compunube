@@ -1,0 +1,15 @@
+# Soak/Resistencia: carga moderada por más tiempo
+config:
+  target: "http://localhost:REPLACE_HOSTPORT"
+  phases:
+    - duration: 120         # 2 minutos
+      arrivalRate: 10       # carga sostenida
+  variables: {}
+scenarios:
+  - name: "Soak /"
+    flow:
+      - get:
+          url: "/"
+          expect:
+            - statusCode: 200
+      - think: 1.5          # pequeña pausa entre requests por usuario
