@@ -1,6 +1,6 @@
 # Soak/Resistencia: carga moderada por más tiempo
 config:
-  target: "http://localhost:REPLACE_HOSTPORT"
+  target: "http://localhost:2200"
   phases:
     - duration: 120         # 2 minutos
       arrivalRate: 10       # carga sostenida
