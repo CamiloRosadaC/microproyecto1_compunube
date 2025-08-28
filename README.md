@@ -155,8 +155,8 @@ curl http://localhost:<PUERTO>/    # Hello from web1 / web2
 
 ``` bash
 npx --yes artillery run tests/artillery.yml --output base.json
-npx --yes artillery run artillery_spike.yml --output spike.json
-npx --yes artillery run artillery_soak.yml --output soak.json
+npx --yes artillery run tests/artillery_spike.yml --output spike.json
+npx --yes artillery run tests/artillery_soak.yml --output soak.json
 ```
 
 ------------------------------------------------------------------------
@@ -190,11 +190,53 @@ npx --yes artillery run artillery_soak.yml --output soak.json
 
 ------------------------------------------------------------------------
 
-## 8) Evidencias sugeridas
+## 8) Evidencias 
 
--   Captura de **Consul UI** con servicios `web` en verde.
+-   Captura de **Consul UI** con servicios y nodos `web` en verde.
+<img width="1898" height="922" alt="image" src="https://github.com/user-attachments/assets/7c720889-bf89-4057-ba3f-31cbee6520f5" />
+<img width="1901" height="929" alt="image" src="https://github.com/user-attachments/assets/ffdab6a0-2da7-4836-9d03-985478f901d3" />
+<img width="1898" height="922" alt="image" src="https://github.com/user-attachments/assets/e3212100-c57d-4d29-a99b-7899800ab384" />
+
 -   Captura de **HAProxy stats** con `web-1` y `web-2` UP.
--   Salida del loop `curl` mostrando alternancia entre backends.
+<img width="1902" height="930" alt="image" src="https://github.com/user-attachments/assets/028f5ba0-d286-4533-8f60-104f42ac5d1b" />
 -   Resumen de Artillery (latencias, RPS).
+### Prueba Base (300 requests totales, 10 req/s)
+- Éxito total: 300/300 respuestas 200 OK, 0 fallos.
+- Latencias:
+ - Media ~3.4 ms.
+ - p95 = 4 ms, p99 = 5 ms.
+ - Muy consistentes y bajas.
+- Sesión usuarios: promedio ~5.9 ms de duración.
+
+El sistema responde perfectamente a carga ligera y estable.
+
+
+### Prueba Spike (2100 requests, pico hasta 100 req/s)
+
+- Éxito total: 2100/2100 respuestas 200 OK, 0 fallos.
+
+- Latencias:
+ - Media 5 ms.
+ - p95 = 6 ms, p99 = 16 ms.
+ - Hubo outliers: máximo 859 ms, p999 ≈ 206 ms (unos pocos requests lentos en el pico).
+ - Sesión usuarios: promedio ~7.4 ms, pero algunos hasta ~860 ms.
+
+El sistema aguanta el pico sin errores, aunque bajo carga extrema aparecen unos cuantos requests con mayor latencia. Esto es típico en un spike test.
+
+### Prueba Soak (1200 requests sostenidos, 10 req/s por 2 minutos)
+
+- Éxito total: 1200/1200 respuestas 200 OK, 0 fallos.
+
+-Latencias:
+ - Media ~6.7 ms.
+ - p95 = 4 ms, p99 = 6 ms → muy buenas.
+ - Pero hay outliers raros: máximo ~1023 ms, p999 ≈ 1000 ms.
+- Sesión usuarios: promedio ~10 ms, pero algunos con duraciones de hasta 1 segundo.
+
+En carga sostenida el sistema es estable y mantiene buenas métricas, pero se detectan latencias aisladas (probablemente GC de NodeJS, scheduling de la VM o DNS resolver de HAProxy).
+
+-   Captura de página 503 personalizada al simular caída de
+    backends.
+<img width="1920" height="922" alt="image" src="https://github.com/user-attachments/assets/26391bb4-2086-456a-928b-bc63ceea4726" />
 -   (Opcional) Captura de página 503 personalizada al simular caída de
     backends.
