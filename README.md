@@ -1,3 +1,7 @@
+# Presentado por:
+Camilo Eduardo Rosada Caicedo - 2205121
+Edilmer Chachinot Narvaez - 22501262
+
 # Microproyecto: Consul + HAProxy + Apps NodeJS + Artillery
 
 Sistema distribuido que combina **Consul** para descubrimiento de
