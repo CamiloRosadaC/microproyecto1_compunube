@@ -1,6 +1,6 @@
 # Presentado por:
 Camilo Eduardo Rosada Caicedo - 2205121
-Edilmer Chachinot Narvaez - 22501262
+Edilmer Chachinoy Narvaez - 22501262
 
 # Microproyecto: Consul + HAProxy + Apps NodeJS + Artillery
 
